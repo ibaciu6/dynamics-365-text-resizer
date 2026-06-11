@@ -1,0 +1,80 @@
+{
+  "manifest_version": 2,
+  "name": "Dynamics 365 Text Resizer",
+  "description": "Makes text fields in Dynamics 365 vertically resizable and auto-fits them to their content. Works across all Dynamics 365 regions. Configurable minimum height, toggle on/off, and hover highlight.",
+  "version": "1.0.0",
+  "permissions": [
+    "storage",
+    "tabs",
+    "https://*.crm.dynamics.com/*",
+    "https://*.crm2.dynamics.com/*",
+    "https://*.crm3.dynamics.com/*",
+    "https://*.crm4.dynamics.com/*",
+    "https://*.crm5.dynamics.com/*",
+    "https://*.crm6.dynamics.com/*",
+    "https://*.crm7.dynamics.com/*",
+    "https://*.crm8.dynamics.com/*",
+    "https://*.crm9.dynamics.com/*",
+    "https://*.crm11.dynamics.com/*",
+    "https://*.crm12.dynamics.com/*",
+    "https://*.crm13.dynamics.com/*",
+    "https://*.crm14.dynamics.com/*",
+    "https://*.crm15.dynamics.com/*",
+    "https://*.crm16.dynamics.com/*",
+    "https://*.crm17.dynamics.com/*",
+    "https://*.microsoftdynamics.us/*",
+    "https://*.microsoftdynamics.de/*"
+  ],
+  "background": {
+    "scripts": ["background.js"],
+    "persistent": false
+  },
+  "browser_action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "128": "icon128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.crm.dynamics.com/*",
+        "https://*.crm2.dynamics.com/*",
+        "https://*.crm3.dynamics.com/*",
+        "https://*.crm4.dynamics.com/*",
+        "https://*.crm5.dynamics.com/*",
+        "https://*.crm6.dynamics.com/*",
+        "https://*.crm7.dynamics.com/*",
+        "https://*.crm8.dynamics.com/*",
+        "https://*.crm9.dynamics.com/*",
+        "https://*.crm11.dynamics.com/*",
+        "https://*.crm12.dynamics.com/*",
+        "https://*.crm13.dynamics.com/*",
+        "https://*.crm14.dynamics.com/*",
+        "https://*.crm15.dynamics.com/*",
+        "https://*.crm16.dynamics.com/*",
+        "https://*.crm17.dynamics.com/*",
+        "https://*.microsoftdynamics.us/*",
+        "https://*.microsoftdynamics.de/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "128": "icon128.png"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "dynamics-text-resizer@ibaciu6",
+      "strict_min_version": "140.0",
+      "data_collection_permissions": {
+        "required": ["none"],
+        "optional": []
+      }
+    },
+    "gecko_android": {
+      "strict_min_version": "142.0"
+    }
+  }
+}
