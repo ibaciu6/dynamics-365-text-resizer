@@ -2,9 +2,7 @@
 
 A Chrome, Edge, and Firefox extension that makes text fields in Dynamics 365 vertically resizable and auto-fits them to their content.
 
-**[Install on Firefox](https://addons.mozilla.org/en-US/firefox/addon/dynamics-365-text-resizer/)** · **[Install on Chrome](https://chrome.google.com/webstore/detail/chhnlfklbbdncogckpoeejhpmbanfbpp)** · Edge (pending review) · **[Privacy Policy](https://ibaciu6.github.io/dynamics-365-text-resizer/privacy-policy.html)**
-
-> The Edge listing is pending review. Edge uses the same Chromium Manifest V3 package as Chrome, so until it is live you can load the Chrome build via `edge://extensions` (Developer mode &rarr; Load unpacked).
+**[Install on Firefox](https://addons.mozilla.org/en-US/firefox/addon/dynamics-365-text-resizer/)** · **[Install on Chrome](https://chrome.google.com/webstore/detail/chhnlfklbbdncogckpoeejhpmbanfbpp)** · **[Install on Edge](https://microsoftedge.microsoft.com/addons/detail/dynamics-365-text-resizer/fmcepahgdmmpmopcjkalgmnkppncmodb)** · **[Privacy Policy](https://ibaciu6.github.io/dynamics-365-text-resizer/privacy-policy.html)**
 
 ## Features
 
