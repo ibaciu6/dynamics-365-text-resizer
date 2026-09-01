@@ -47,7 +47,7 @@ if [ "$UPLOAD_STATUS_CODE" != "202" ]; then
   exit 1
 fi
 
-OPERATION_ID="$(grep -i '^location:' "$UPLOAD_HEADERS" | sed -E 's#.*/operations/([a-zA-Z0-9_-]+).*#\1#i' | tr -d '\r')"
+OPERATION_ID="$(grep -i '^location:' "$UPLOAD_HEADERS" | sed -E 's/^[Ll]ocation:[[:space:]]*//' | tr -d '\r')"
 rm -f "$UPLOAD_HEADERS"
 
 if [ -z "$OPERATION_ID" ]; then
@@ -87,7 +87,7 @@ if [ "$PUBLISH_STATUS_CODE" != "202" ]; then
   exit 1
 fi
 
-PUBLISH_OP_ID="$(grep -i '^location:' "$PUBLISH_HEADERS" | sed -E 's#.*/operations/([a-zA-Z0-9_-]+).*#\1#i' | tr -d '\r')"
+PUBLISH_OP_ID="$(grep -i '^location:' "$PUBLISH_HEADERS" | sed -E 's/^[Ll]ocation:[[:space:]]*//' | tr -d '\r')"
 rm -f "$PUBLISH_HEADERS"
 echo "✓ Publish submitted (202). Operation ID: ${PUBLISH_OP_ID:-<none returned>}"
 
