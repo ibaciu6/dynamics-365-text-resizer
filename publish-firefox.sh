@@ -58,17 +58,20 @@ PY
 
 echo "→ Uploading package: $PACKAGE"
 JWT="$(make_jwt)"
-UPLOAD_RESP="$(curl -sS -X POST "${API_BASE}/addons/upload/" \
+UPLOAD_BODY_FILE="$(mktemp)"
+UPLOAD_HTTP_CODE="$(curl -sS -o "$UPLOAD_BODY_FILE" -w '%{http_code}' -X POST "${API_BASE}/addons/upload/" \
   -H "Authorization: JWT ${JWT}" \
   -F "upload=@${PACKAGE};type=application/zip" \
   -F "channel=listed")"
+UPLOAD_RESP="$(cat "$UPLOAD_BODY_FILE")"
+rm -f "$UPLOAD_BODY_FILE"
 
-UPLOAD_UUID="$(python3 -c "import sys,json; print(json.load(sys.stdin).get('uuid',''))" <<<"$UPLOAD_RESP")"
-if [ -z "$UPLOAD_UUID" ]; then
-  echo "Failed to create upload. Response:" >&2
+if [[ ! "$UPLOAD_HTTP_CODE" =~ ^2 ]]; then
+  echo "Failed to create upload (HTTP $UPLOAD_HTTP_CODE). Response:" >&2
   echo "$UPLOAD_RESP" >&2
   exit 1
 fi
+UPLOAD_UUID="$(python3 -c "import sys,json; print(json.load(sys.stdin).get('uuid',''))" <<<"$UPLOAD_RESP")"
 echo "✓ Upload created: $UPLOAD_UUID"
 
 echo "→ Waiting for validation..."
@@ -101,17 +104,21 @@ PY
 )"
 
 JWT="$(make_jwt)"
-VERSION_RESP="$(curl -sS -X POST "${API_BASE}/addons/addon/${ADDON_SLUG}/versions/" \
+VERSION_BODY_FILE="$(mktemp)"
+VERSION_HTTP_CODE="$(curl -sS -o "$VERSION_BODY_FILE" -w '%{http_code}' -X POST \
+  "${API_BASE}/addons/addon/${ADDON_SLUG}/versions/" \
   -H "Authorization: JWT ${JWT}" \
   -H "Content-Type: application/json" \
   -d "$VERSION_BODY")"
+VERSION_RESP="$(cat "$VERSION_BODY_FILE")"
+rm -f "$VERSION_BODY_FILE"
 
-VERSION_NUM="$(python3 -c "import sys,json; print(json.load(sys.stdin).get('version',''))" <<<"$VERSION_RESP" 2>/dev/null || true)"
-if [ -z "$VERSION_NUM" ]; then
-  echo "Version creation may have failed. Full response:" >&2
+if [[ ! "$VERSION_HTTP_CODE" =~ ^2 ]]; then
+  echo "Version creation failed (HTTP $VERSION_HTTP_CODE). Full response:" >&2
   echo "$VERSION_RESP" >&2
   exit 1
 fi
 
-echo "✓ Version ${VERSION_NUM} submitted for review."
+VERSION_NUM="$(python3 -c "import sys,json; print(json.load(sys.stdin).get('version',''))" <<<"$VERSION_RESP")"
+echo "✓ Version ${VERSION_NUM} submitted for review (HTTP $VERSION_HTTP_CODE)."
 echo "  Track status at https://addons.mozilla.org/en-US/developers/addon/${ADDON_SLUG}/versions"
