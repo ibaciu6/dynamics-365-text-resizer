@@ -155,7 +155,7 @@ function injectStyles() {
       transition: outline 0.2s ease;
     }
     .${QUILL_MARKER} .ql-container {
-      overflow: auto !important;
+      overflow: visible !important;
       max-height: none !important;
       height: auto !important;
       min-height: 0 !important;
