@@ -31,9 +31,7 @@ DO_PUBLISH=0
 
 [ -f "$SCRIPT_DIR/chrome/manifest.json" ] || { echo "Missing $SCRIPT_DIR/chrome/manifest.json" >&2; exit 1; }
 
-: "${CHROME_CLIENT_ID:?CHROME_CLIENT_ID not set in $CREDS_FILE}"
-: "${CHROME_CLIENT_SECRET:?CHROME_CLIENT_SECRET not set in $CREDS_FILE}"
-: "${CHROME_REFRESH_TOKEN:?CHROME_REFRESH_TOKEN not set in $CREDS_FILE — see the TODO comment next to it}"
+: "${CHROME_SERVICE_ACCOUNT:?CHROME_SERVICE_ACCOUNT not set in $CREDS_FILE}"
 : "${CHROME_WEBSTORE_PUBLISHER_ID:?CHROME_WEBSTORE_PUBLISHER_ID not set in $CREDS_FILE}"
 : "${CHROME_WEBSTORE_ITEM_DYNAMICS365TEXTRESIZER:?CHROME_WEBSTORE_ITEM_DYNAMICS365TEXTRESIZER not set in $CREDS_FILE}"
 
@@ -42,19 +40,34 @@ RESOURCE_NAME="publishers/${CHROME_WEBSTORE_PUBLISHER_ID}/items/${CHROME_WEBSTOR
 
 VERSION="$(python3 -c "import json; print(json.load(open('${SCRIPT_DIR}/chrome/manifest.json'))['version'])")"
 
-echo "→ Refreshing access token..."
-TOKEN_RESP="$(curl -sS --fail-with-body -X POST 'https://oauth2.googleapis.com/token' \
-  -H 'Content-Type: application/x-www-form-urlencoded' \
-  --data-urlencode "client_id=${CHROME_CLIENT_ID}" \
-  --data-urlencode "client_secret=${CHROME_CLIENT_SECRET}" \
-  --data-urlencode "refresh_token=${CHROME_REFRESH_TOKEN}" \
-  --data-urlencode 'grant_type=refresh_token')"
-ACCESS_TOKEN="$(python3 -c "import sys,json; print(json.load(sys.stdin).get('access_token',''))" <<<"$TOKEN_RESP")"
-if [ -z "$ACCESS_TOKEN" ] || [ "$ACCESS_TOKEN" = "null" ]; then
-  echo "Failed to obtain access token (response withheld — check refresh token validity)." >&2
+# Uses gcloud + service-account impersonation, not the human OAuth refresh
+# token — this does not expire the way CHROME_REFRESH_TOKEN does (see
+# CLAUDE.md "Chrome Web Store — service-account path"). Requires:
+# gcloud installed + logged in (gcloud auth login) as an identity granted
+# roles/iam.serviceAccountTokenCreator on CHROME_SERVICE_ACCOUNT, and that
+# same service account added to the publisher's "Service account" field in
+# the Chrome Web Store Developer Dashboard (Settings page) -- not the
+# "Trusted tester accounts" or "Members" fields, those don't grant API access.
+command -v gcloud >/dev/null 2>&1 || source "$HOME/google-cloud-sdk/path.bash.inc" 2>/dev/null || true
+command -v gcloud >/dev/null 2>&1 || { echo "gcloud not found — see CLAUDE.md for install/login steps" >&2; exit 1; }
+
+echo "→ Minting service-account access token..."
+CALLER_TOKEN="$(gcloud auth print-access-token 2>/dev/null || true)"
+if [ -z "$CALLER_TOKEN" ]; then
+  echo "gcloud has no active login — run: gcloud auth login --no-launch-browser (in a real terminal, not through an automation bridge — see CLAUDE.md)" >&2
   exit 1
 fi
-echo "✓ Got access token"
+SA_TOKEN_RESP="$(curl -sS --fail-with-body -X POST \
+  -H "Authorization: Bearer ${CALLER_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d "{\"scope\": [\"https://www.googleapis.com/auth/chromewebstore\"]}" \
+  "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${CHROME_SERVICE_ACCOUNT}:generateAccessToken")"
+ACCESS_TOKEN="$(python3 -c "import sys,json; print(json.load(sys.stdin).get('accessToken',''))" <<<"$SA_TOKEN_RESP")"
+if [ -z "$ACCESS_TOKEN" ]; then
+  echo "Failed to mint service-account access token (response withheld — check IAM impersonation grant)." >&2
+  exit 1
+fi
+echo "✓ Got service-account access token"
 
 echo "→ Checking currently published state..."
 STATUS_RESP="$(curl -sS --fail-with-body -H "Authorization: Bearer ${ACCESS_TOKEN}" \
@@ -136,7 +149,7 @@ echo "→ Submitting for publish..."
 PUBLISH_RESP="$(curl -sS --fail-with-body -X POST \
   -H "Authorization: Bearer ${ACCESS_TOKEN}" \
   -H 'Content-Type: application/json' \
-  -d '{"publishType":"DEFAULT_PUBLISH"}' \
+  -d '{"publishType":"DEFAULT_PUBLISH","blockOnWarnings":true}' \
   "${API_BASE}/v2/${RESOURCE_NAME}:publish")"
 echo "$PUBLISH_RESP"
 
