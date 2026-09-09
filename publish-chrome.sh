@@ -114,29 +114,12 @@ if [ "$UPLOAD_STATE" = "FAILURE" ]; then
   exit 1
 fi
 
-echo "→ Polling validation status..."
-for i in $(seq 1 30); do
-  STATUS_RESP="$(curl -sS --fail-with-body -H "Authorization: Bearer ${ACCESS_TOKEN}" \
-    "${API_BASE}/v2/${RESOURCE_NAME}:fetchStatus")"
-  ITEM_STATE="$(python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-rev = d.get('itemRevisionStatus') or d.get('publishedItemRevisionStatus') or {}
-print(rev.get('state',''))
-" <<<"$STATUS_RESP")"
-  echo "  [$i/30] item state: ${ITEM_STATE:-<unknown>}"
-  case "$ITEM_STATE" in
-    ITEM_STATE_REJECTED|REJECTED)
-      echo "Validation failed. Full response:" >&2
-      echo "$STATUS_RESP" >&2
-      exit 1
-      ;;
-    "" ) sleep 5 ;;
-    *) break ;;
-  esac
-done
-
-echo "✓ Upload accepted and validated (uploadState: $UPLOAD_STATE)."
+# NOTE: there is no distinct "validation" sub-status separate from uploadState
+# to poll here -- fetchStatus right after upload just reflects whatever the
+# *currently published* revision's state is (always PUBLISHED once anything
+# has ever shipped), which is not a signal about the new upload at all. The
+# uploadState check above (FAILURE -> exit 1) is the real signal for this step.
+echo "✓ Upload accepted (uploadState: $UPLOAD_STATE)."
 
 if [ "$DO_PUBLISH" -ne 1 ]; then
   echo
@@ -153,21 +136,45 @@ PUBLISH_RESP="$(curl -sS --fail-with-body -X POST \
   "${API_BASE}/v2/${RESOURCE_NAME}:publish")"
 echo "$PUBLISH_RESP"
 
-echo "→ Polling publish status..."
-for i in $(seq 1 30); do
+# The new revision shows up under `submittedItemRevisionStatus` while it's in
+# Google's review queue -- `publishedItemRevisionStatus` keeps reporting the
+# OLD live revision's state (always PUBLISHED) until review actually
+# completes, which can take anywhere from seconds to days. So "submitted
+# successfully, now pending review" is treated as a real success here, not
+# just "PUBLISHED" -- don't wait around for manual review to finish.
+echo "→ Checking submission status..."
+for i in $(seq 1 5); do
   STATUS_RESP="$(curl -sS --fail-with-body -H "Authorization: Bearer ${ACCESS_TOKEN}" \
     "${API_BASE}/v2/${RESOURCE_NAME}:fetchStatus")"
-  STATE="$(python3 -c "
-import sys, json
+  RESULT="$(VERSION="$VERSION" python3 -c "
+import sys, json, os
 d = json.load(sys.stdin)
-rev = d.get('itemRevisionStatus') or d.get('publishedItemRevisionStatus') or {}
-print(rev.get('state',''))
+submitted = d.get('submittedItemRevisionStatus')
+published = d.get('publishedItemRevisionStatus', {})
+pub_chans = published.get('distributionChannels', [])
+pub_version = pub_chans[0]['crxVersion'] if pub_chans else ''
+target = os.environ['VERSION']
+if submitted is None:
+    print('LIVE' if pub_version == target else 'UNKNOWN')
+else:
+    state = submitted.get('state', '')
+    if 'REJECT' in state:
+        print('REJECTED')
+    elif state == 'PUBLISHED':
+        print('LIVE')
+    else:
+        print('PENDING:' + state)
 " <<<"$STATUS_RESP")"
-  echo "  [$i/30] state: ${STATE:-<unknown>}"
-  case "$STATE" in
-    PUBLISHED) echo "✓ Published."; break ;;
-    ITEM_STATE_REJECTED|REJECTED) echo "Publish rejected. Full response:" >&2; echo "$STATUS_RESP" >&2; exit 1 ;;
-    *) sleep 20 ;;
+  echo "  [$i/5] $RESULT"
+  case "$RESULT" in
+    LIVE) echo "✓ Published and already live."; break ;;
+    REJECTED) echo "Publish rejected. Full response:" >&2; echo "$STATUS_RESP" >&2; exit 1 ;;
+    PENDING:*)
+      echo "✓ Submitted successfully — currently ${RESULT#PENDING:} in Google's review queue, NOT live yet."
+      echo "$STATUS_RESP"
+      exit 0
+      ;;
+    *) sleep 5 ;;
   esac
 done
 
