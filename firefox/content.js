@@ -205,11 +205,22 @@ function fitTextarea(ta, force) {
 
   ta.style.height = 'auto';
   const needed = ta.scrollHeight;
-  ta.style.height = Math.max(needed, settings.minHeight) + 'px';
+  const target = Math.max(needed, settings.minHeight) + 'px';
+  ta.style.height = target;
 
   if (focused && selStart !== null && selEnd !== null) {
     try { ta.setSelectionRange(selStart, selEnd, selDir || 'none'); } catch (_) {}
   }
+
+  // Some Dynamics 365 controls run their own resize logic on the same
+  // keystroke, synchronously reconciled right after our write — silently
+  // overwriting it (observed: shrinking never took effect while manual
+  // native drag-resize did). Reapplying one frame later runs after that
+  // reconciliation has already flushed, so our value wins instead of
+  // getting stomped.
+  requestAnimationFrame(() => {
+    if (ta.isConnected) ta.style.height = target;
+  });
 }
 
 // Re-fit every enhanced textarea whose value has actually changed since
@@ -241,7 +252,15 @@ function fitQuill(q, force) {
   // Collapse to auto so q.scrollHeight reflects true content height, not the
   // flex-allocated layout height (which caused cumulative growth per keystroke).
   q.style.height = 'auto';
-  q.style.height = Math.max(q.scrollHeight, settings.minHeight) + 'px';
+  const target = Math.max(q.scrollHeight, settings.minHeight) + 'px';
+  q.style.height = target;
+
+  // See the matching comment in fitTextarea() — Dynamics' own control can
+  // reconcile the height back to a stale value on the same keystroke.
+  // Reapplying next frame, after that reconciliation flushes, wins the race.
+  requestAnimationFrame(() => {
+    if (q.isConnected) q.style.height = target;
+  });
 }
 
 // Batched version: collapse all → read all → write all (mirrors fitAllTextareas).
@@ -291,13 +310,66 @@ function applyTextareaStyles() {
 
 // ── Apply: Quill rich-text editors ─────────────────────────
 
+// Dynamics 365 now auto-sizes its own comment/timeline Quill fields
+// natively — enhancing them too would fight that OOTB behavior. Those
+// fields are identified by their placeholder text (stable across comment
+// boxes; unrelated to fields like Description that still need our fit).
+const COMMENT_PLACEHOLDER_RE = /^add a comment/i;
+
+function isCommentQuill(editor) {
+  const ph = editor.getAttribute('data-placeholder') || '';
+  return COMMENT_PLACEHOLDER_RE.test(ph.trim());
+}
+
+// Strip our enhancements from a single Quill field — used both for a
+// full disable (removeStyles) and to back out of a comment field that a
+// prior version of this extension had already enhanced.
+function revertQuill(el) {
+  el.classList.remove(QUILL_MARKER, 'd365-highlight');
+  el.style.resize = '';
+  el.style.overflow = '';
+  el.style.height = '';
+  el.style.minHeight = '';
+  el.style.maxHeight = '';
+  el.style.display = '';
+  el.style.flexDirection = '';
+  delete el._d365LastHtml;
+
+  const container = el.querySelector('.ql-container');
+  if (container) {
+    container.style.overflow = '';
+    container.style.maxHeight = '';
+    container.style.height = '';
+    container.style.minHeight = '';
+    container.style.flex = '';
+  }
+  const editor = el.querySelector('.ql-editor');
+  if (editor) {
+    editor.style.overflow = '';
+    editor.style.maxHeight = '';
+    editor.style.minHeight = '';
+    if (editor._d365FitHandler) {
+      editor.removeEventListener('input', editor._d365FitHandler);
+      delete editor._d365FitHandler;
+    }
+  }
+  const btn = el.querySelector('.' + FORMAT_BTN_CLASS);
+  if (btn) btn.remove();
+}
+
 function applyQuillStyles() {
   const minH = settings.minHeight;
-  const quills = document.querySelectorAll('.quill:not(.' + QUILL_MARKER + ')');
+  const quills = document.querySelectorAll('.quill');
 
   quills.forEach(q => {
     const editor = q.querySelector('.ql-editor[contenteditable="true"]');
     if (!editor) return;
+
+    if (isCommentQuill(editor)) {
+      if (q.classList.contains(QUILL_MARKER)) revertQuill(q);
+      return;
+    }
+    if (q.classList.contains(QUILL_MARKER)) return;
 
     q.classList.add(QUILL_MARKER);
     if (settings.showHighlight) q.classList.add('d365-highlight');
@@ -366,36 +438,7 @@ function removeStyles() {
     delete el._d365LastValue;
   });
 
-  document.querySelectorAll('.' + QUILL_MARKER).forEach(el => {
-    el.classList.remove(QUILL_MARKER, 'd365-highlight');
-    el.style.resize = '';
-    el.style.overflow = '';
-    el.style.height = '';
-    el.style.minHeight = '';
-    el.style.maxHeight = '';
-    el.style.display = '';
-    el.style.flexDirection = '';
-    delete el._d365LastHtml;
-
-    const container = el.querySelector('.ql-container');
-    if (container) {
-      container.style.overflow = '';
-      container.style.maxHeight = '';
-      container.style.height = '';
-      container.style.minHeight = '';
-      container.style.flex = '';
-    }
-    const editor = el.querySelector('.ql-editor');
-    if (editor) {
-      editor.style.overflow = '';
-      editor.style.maxHeight = '';
-      editor.style.minHeight = '';
-      if (editor._d365FitHandler) {
-        editor.removeEventListener('input', editor._d365FitHandler);
-        delete editor._d365FitHandler;
-      }
-    }
-  });
+  document.querySelectorAll('.' + QUILL_MARKER).forEach(revertQuill);
 }
 
 // ── Badge ──────────────────────────────────────────────────
@@ -434,10 +477,13 @@ let visibilityObserver = null;
 
 function startObserver() {
   if (observer) return;
-  // Only react to mutations that add new nodes — pure text edits inside
-  // existing fields fire mutations too and should be ignored.
+  // React to nodes being added OR removed. Growth (typing) and shrink
+  // (deleting) both need this fallback — a mutation that only removes
+  // nodes (e.g. deleting a whole paragraph in Quill) was previously
+  // ignored, so a field could get stuck oversized with no recheck ever
+  // catching the shrink.
   observer = new MutationObserver((mutations) => {
-    if (mutations.some(m => m.addedNodes.length > 0)) {
+    if (mutations.some(m => m.addedNodes.length > 0 || m.removedNodes.length > 0)) {
       debouncedApply();
     }
   });

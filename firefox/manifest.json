@@ -2,7 +2,7 @@
   "manifest_version": 2,
   "name": "Dynamics 365 Text Resizer",
   "description": "Makes text fields in Dynamics 365 vertically resizable and auto-fits them to their content. Works across all Dynamics 365 regions. Configurable minimum height, toggle on/off, and hover highlight.",
-  "version": "1.0.1",
+  "version": "1.0.4",
   "permissions": [
     "storage",
     "tabs",
